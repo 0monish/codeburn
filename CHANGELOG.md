@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.11 - 2026-05-27
 
 ### Added (CLI)
 - **MCP project profile advisor.** `codeburn optimize` now flags MCP servers
