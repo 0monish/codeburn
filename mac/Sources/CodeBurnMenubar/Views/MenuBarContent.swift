@@ -11,6 +11,14 @@ struct MenuBarContent: View {
 
             Divider()
 
+            if let message = store.refreshPauseMessage {
+                RefreshPausedBanner(
+                    message: message,
+                    retry: { refreshNow() }
+                )
+                Divider()
+            }
+
             if showAgentTabs {
                 AgentTabStrip()
                 Divider()
@@ -24,7 +32,7 @@ struct MenuBarContent: View {
                         PeriodSegmentedControl()
                         Divider().opacity(0.5)
                         if isFilteredEmpty {
-                            EmptyProviderState(provider: store.selectedProvider, periodLabel: store.selectionLabel)
+                            EmptyProviderState(provider: store.selectedProvider, period: store.selectedPeriod)
                         } else {
                             HeatmapSection()
                                 .padding(.horizontal, 14)
@@ -48,31 +56,22 @@ struct MenuBarContent: View {
                 // switches. When the fetch fails (CLI subprocess timeout, parse
                 // error, etc.), surface a retry card instead of leaving the
                 // user stuck on a perpetual "Loading..." spinner.
-                if !store.hasCachedData {
-                    if let err = store.lastError {
-                        FetchErrorOverlay(
-                            error: err,
-                            periodLabel: store.selectionLabel,
-                            retry: { Task { await store.refresh(includeOptimize: false, force: true, showLoading: true) } }
-                        )
+                if store.isCurrentKeyLoading || !store.hasAttemptedCurrentKeyLoad {
+                    BurnLoadingOverlay(periodLabel: store.selectedPeriod.rawValue)
                         .transition(.opacity)
-                    } else {
-                        BurnLoadingOverlay(periodLabel: store.selectionLabel)
-                            .transition(.opacity)
-                            .task {
-                                var delay: Duration = .seconds(8)
-                                let maxDelay: Duration = .seconds(60)
-                                let maxAttempts = 6
-                                for attempt in 1...maxAttempts {
-                                    try? await Task.sleep(for: delay)
-                                    guard !Task.isCancelled, !store.hasCachedData else { return }
-                                    await store.recoverFromStuckLoading()
-                                    if attempt < maxAttempts { delay = min(delay * 2, maxDelay) }
-                                }
-                                guard !Task.isCancelled, !store.hasCachedData else { return }
-                                store.setRecoveryExhausted(for: store.selectionLabel)
-                            }
-                    }
+                } else if let err = store.lastError {
+                    FetchErrorOverlay(
+                        error: err,
+                        periodLabel: store.selectedPeriod.rawValue,
+                        retry: { Task { await store.refresh(includeOptimize: false, force: true, showLoading: true) } }
+                    )
+                    .transition(.opacity)
+                } else if !store.hasCachedData {
+                    FetchErrorOverlay(
+                        error: "The last refresh stopped before returning data. CodeBurn will keep retrying, or you can retry now.",
+                        periodLabel: store.selectedPeriod.rawValue,
+                        retry: { Task { await store.refresh(includeOptimize: false, force: true, showLoading: true) } }
+                    )
                 }
             }
             .frame(height: 520)
@@ -81,8 +80,6 @@ struct MenuBarContent: View {
             Divider()
 
             FooterBar()
-
-            CLIUpdateBanner()
 
             StarBanner()
         }
@@ -120,22 +117,59 @@ struct MenuBarContent: View {
 
 }
 
+private struct RefreshPausedBanner: View {
+    let message: String
+    let retry: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "pause.circle.fill")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.brandAccent)
+            Text(message)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 6)
+            Button("Retry", action: retry)
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.brandAccent)
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.secondary.opacity(0.08))
+    }
+}
+
 private struct EmptyProviderState: View {
     let provider: ProviderFilter
-    let periodLabel: String
+    let period: Period
 
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: "tray")
                 .font(.system(size: 26))
                 .foregroundStyle(.tertiary)
-            Text("No \(provider.rawValue) data for \(periodLabel)")
+            Text("No \(provider.rawValue) data for \(periodPhrase)")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 60)
+    }
+
+    private var periodPhrase: String {
+        switch period {
+        case .today: "today"
+        case .sevenDays: "the last 7 days"
+        case .thirtyDays: "the last 30 days"
+        case .month: "this month"
+        case .all: "the last 6 months"
+        case .lifetime: "all time"
+        }
     }
 
 }
@@ -461,49 +495,6 @@ struct FlameMark: View {
     }
 }
 
-struct CLIUpdateBanner: View {
-    @Environment(UpdateChecker.self) private var updateChecker
-
-    var body: some View {
-        if updateChecker.cliUpdateAvailable {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.blue)
-
-                Text("CLI \(updateChecker.latestCliVersion ?? "") available")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(.primary)
-
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(updateChecker.cliUpdateCommand, forType: .string)
-                } label: {
-                    HStack(spacing: 3) {
-                        Text(updateChecker.cliUpdateCommand)
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: 8))
-                    }
-                    .foregroundStyle(.blue)
-                }
-                .buttonStyle(.plain)
-                .help("Copy update command to clipboard")
-
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color.blue.opacity(0.06))
-            .overlay(alignment: .top) {
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.18))
-                    .frame(height: 0.5)
-            }
-        }
-    }
-}
-
 private let starBannerGitHubURL = URL(string: "https://github.com/getagentseal/codeburn")!
 
 /// Shown at the very bottom on first launch. A small terracotta strip nudges users to star the
@@ -636,11 +627,7 @@ struct FooterBar: View {
     }
 
     private func refreshNow() {
-        if let delegate = NSApp.delegate as? AppDelegate {
-            delegate.refreshSubscriptionNow()
-        } else {
-            Task { await store.refresh(includeOptimize: false, force: true, showLoading: true) }
-        }
+        MenuBarContent.refreshNow(store: store)
     }
 
     private enum ExportFormat {
@@ -704,5 +691,19 @@ struct FooterBar: View {
         }
 
         CLICurrencyConfig.persist(code: code)
+    }
+}
+
+private extension MenuBarContent {
+    static func refreshNow(store: AppStore) {
+        if let delegate = NSApp.delegate as? AppDelegate {
+            delegate.refreshSubscriptionNow()
+        } else {
+            Task { await store.refresh(includeOptimize: false, force: true, showLoading: true) }
+        }
+    }
+
+    func refreshNow() {
+        Self.refreshNow(store: store)
     }
 }

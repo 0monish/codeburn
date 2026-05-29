@@ -170,9 +170,13 @@ export function getDateRange(period: string): { range: DateRange; label: string 
       const start = new Date(now.getFullYear(), now.getMonth() - ALL_TIME_MONTHS, 1)
       return { range: { start, end }, label: 'Last 6 months' }
     }
+    case 'lifetime': {
+      const start = new Date(2010, 0, 1)
+      return { range: { start, end }, label: 'Lifetime' }
+    }
     default: {
       process.stderr.write(
-        `codeburn: unknown period "${period}". Valid values: today, week, 30days, month, all.\n`
+        `codeburn: unknown period "${period}". Valid values: today, week, 30days, month, all, lifetime.\n`
       )
       process.exit(1)
     }

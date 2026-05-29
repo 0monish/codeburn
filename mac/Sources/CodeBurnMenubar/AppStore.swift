@@ -66,6 +66,7 @@ final class AppStore {
     private var loadingStartedAtByKey: [PayloadCacheKey: Date] = [:]
     private var attemptedKeys: Set<PayloadCacheKey> = []
     private var lastErrorByKey: [PayloadCacheKey: String] = [:]
+    var refreshPauseMessage: String?
     var subscription: SubscriptionUsage?
     var subscriptionError: String?
     var subscriptionLoadState: SubscriptionLoadState = ClaudeCredentialStore.isBootstrapCompleted ? .dormant : .notBootstrapped
@@ -278,6 +279,17 @@ final class AppStore {
         Task { [weak self] in
             await self?.refreshQuietly(period: period)
         }
+    }
+
+    func pauseAutomaticRefresh(until: Date, consecutiveStalls: Int) {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        refreshPauseMessage = "Refresh paused until \(formatter.string(from: until)) after \(consecutiveStalls) stalled attempts. Click retry to resume."
+    }
+
+    func clearRefreshPause() {
+        refreshPauseMessage = nil
     }
 
     /// Switch to a provider filter. Cancels any in-flight switch so rapid tab tapping only
@@ -1098,6 +1110,7 @@ enum Period: String, CaseIterable, Identifiable {
     case thirtyDays = "30 Days"
     case month = "Month"
     case all = "6 Months"
+    case lifetime = "Lifetime"
 
     var id: String { rawValue }
 
@@ -1109,10 +1122,11 @@ enum Period: String, CaseIterable, Identifiable {
         case .thirtyDays: "30days"
         case .month: "month"
         case .all: "all"
+        case .lifetime: "lifetime"
         }
     }
 
-    static let menubarMetricCases: [Period] = [.today, .sevenDays, .month, .all]
+    static let menubarMetricCases: [Period] = [.today, .sevenDays, .month, .all, .lifetime]
 
     var menubarMetricLabel: String {
         switch self {
@@ -1121,6 +1135,7 @@ enum Period: String, CaseIterable, Identifiable {
         case .thirtyDays: "30 Days"
         case .month: "Month"
         case .all: "6 Months"
+        case .lifetime: "Lifetime"
         }
     }
 
@@ -1131,6 +1146,7 @@ enum Period: String, CaseIterable, Identifiable {
         case .thirtyDays: "30days"
         case .month: "month"
         case .all: "sixMonths"
+        case .lifetime: "lifetime"
         }
     }
 
@@ -1140,6 +1156,7 @@ enum Period: String, CaseIterable, Identifiable {
         case "week", "sevenDays": self = .sevenDays
         case "month": self = .month
         case "sixMonths", "all": self = .all
+        case "lifetime": self = .lifetime
         default: self = .today
         }
     }
@@ -1160,6 +1177,7 @@ enum Period: String, CaseIterable, Identifiable {
         case .thirtyDays: compact ? "/30d" : " / 30d"
         case .month: compact ? "/mo" : " / mo"
         case .all: compact ? "/6mo" : " / 6mo"
+        case .lifetime: compact ? "/all" : " / all"
         }
     }
 }

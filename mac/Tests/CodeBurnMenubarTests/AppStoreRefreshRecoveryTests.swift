@@ -28,7 +28,8 @@ private func menubarPayload(cost: Double) -> MenubarPayload {
             mcpServers: []
         ),
         optimize: OptimizeBlock(findingCount: 0, savingsUSD: 0, topFindings: []),
-        history: HistoryBlock(daily: [])
+        history: HistoryBlock(daily: [], intraday: []),
+        stats: StatsSummary(trackedSpend: cost, trackedDays: 1, mostActiveDay: nil, peakDaySpend: cost, currentStreakDays: 1, longestStreakDays: 1)
     )
 }
 
@@ -89,6 +90,18 @@ struct AppStoreRefreshRecoveryTests {
         #expect(store.needsInteractivePayloadRefresh)
         #expect(store.hasMissingInteractivePayloadWithoutAttempt)
         #expect(store.shouldResetInteractiveRefreshPipeline)
+    }
+
+    @Test("refresh pause message is visible and clearable")
+    func refreshPauseMessageIsVisibleAndClearable() {
+        let store = AppStore()
+
+        store.pauseAutomaticRefresh(until: Date(timeIntervalSince1970: 4_000), consecutiveStalls: 3)
+        #expect(store.refreshPauseMessage?.contains("Refresh paused") == true)
+        #expect(store.refreshPauseMessage?.contains("3 stalled attempts") == true)
+
+        store.clearRefreshPause()
+        #expect(store.refreshPauseMessage == nil)
     }
 
 }
